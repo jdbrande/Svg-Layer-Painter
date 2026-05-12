@@ -1,0 +1,1510 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SVG Layer Painter</title>
+
+  <style>
+    :root {
+      --bg: #111318;
+      --panel: #1b1f29;
+      --panel-2: #242a36;
+      --text: #f4f6fb;
+      --muted: #a9b0c0;
+      --border: #353c4d;
+      --danger: #ef4444;
+      --ok: #22c55e;
+      --active-color: #8b5cf6;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--border);
+      background: #0f1117;
+    }
+
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .drop-zone {
+      margin: 14px 22px 0;
+      padding: 22px;
+      border: 2px dashed var(--border);
+      border-radius: 14px;
+      background: var(--panel);
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.15s;
+    }
+
+    .drop-zone.dragover {
+      border-color: var(--active-color);
+      background: #26233a;
+      transform: scale(1.008);
+    }
+
+    .drop-zone strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .drop-zone span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 14px 22px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-right: 12px;
+      border-right: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .tool-group:last-child {
+      border-right: 0;
+    }
+
+    button, select {
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled), select:hover {
+      filter: brightness(1.12);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .layer-list {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      max-width: 760px;
+    }
+
+    .layer-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      border-radius: 12px;
+      padding: 6px;
+    }
+
+    .layer-chip.active {
+      outline: 3px solid white;
+      outline-offset: 2px;
+    }
+
+    .layer-select {
+      min-width: 76px;
+      border: 0;
+      color: white;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-weight: 800;
+      cursor: pointer;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+    }
+
+    .remove-layer {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border-radius: 8px;
+      color: var(--muted);
+    }
+
+    .remove-layer:hover {
+      color: white;
+      background: var(--danger);
+      border-color: var(--danger);
+    }
+
+    .eraser.active {
+      background: var(--danger);
+      border-color: var(--danger);
+    }
+
+    .generate {
+      background: var(--ok);
+      border-color: var(--ok);
+      color: #06130a;
+    }
+
+    .workspace-wrap {
+      padding: 18px 22px;
+      min-height: 0;
+    }
+
+    .workspace {
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 292px);
+      min-height: 420px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background:
+        linear-gradient(45deg, #202530 25%, transparent 25%),
+        linear-gradient(-45deg, #202530 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #202530 75%),
+        linear-gradient(-45deg, transparent 75%, #202530 75%);
+      background-size: 28px 28px;
+      background-position: 0 0, 0 14px, 14px -14px, -14px 0;
+    }
+
+    .svg-stage {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform-origin: center center;
+      pointer-events: none;
+    }
+
+    .svg-stage svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: white;
+    }
+
+    #paintCanvas {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform-origin: center center;
+      touch-action: none;
+      cursor: none;
+    }
+
+    #brushCursor {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 24px;
+      height: 24px;
+      border: 2px solid var(--active-color);
+      border-radius: 999px;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      display: none;
+      transition: width 0.08s ease, height 0.08s ease, border-color 0.08s ease, background 0.08s ease;
+      box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.8),
+        inset 0 0 0 1px rgba(0, 0, 0, 0.8);
+      background: color-mix(in srgb, var(--active-color) 18%, transparent);
+    }
+
+    #brushCursor.eraser {
+      border-color: var(--danger);
+      background: rgba(239, 68, 68, 0.14);
+    }
+
+    .empty-state {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      pointer-events: none;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      background: rgba(10, 12, 18, 0.72);
+      z-index: 10000;
+      backdrop-filter: blur(5px);
+    }
+
+    .loading-card {
+      width: min(360px, calc(100vw - 36px));
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--panel);
+      text-align: center;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      margin: 0 auto 14px;
+      border: 4px solid #313849;
+      border-top-color: var(--active-color);
+      border-radius: 999px;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      place-items: center;
+      z-index: 10001;
+      background: rgba(10, 12, 18, 0.76);
+      backdrop-filter: blur(5px);
+    }
+
+    .modal {
+      width: min(480px, calc(100vw - 36px));
+      padding: 22px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    .modal h2 {
+      margin: 0 0 8px;
+      font-size: 19px;
+    }
+
+    .modal p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .status {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    input[type="range"] {
+      width: 150px;
+    }
+
+    input[type="color"] {
+      width: 36px;
+      height: 32px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <header>
+      <h1>SVG Layer Painter</h1>
+      <p>Paint SVG regions, generate Inkscape-ready colored layers, then download the grouped SVG.</p>
+    </header>
+
+    <div class="drop-zone" id="dropZone">
+      <strong>Drop an SVG here</strong>
+      <span>or click to choose a file</span>
+      <input id="fileInput" type="file" accept=".svg,image/svg+xml" />
+    </div>
+
+    <div class="toolbar">
+      <div class="tool-group">
+        <div id="layerList" class="layer-list"></div>
+        <button id="addLayerBtn" title="Add layer">Add Layer</button>
+      </div>
+
+      <div class="tool-group">
+        <label title="Choose physical pen width">
+          Pen
+          <select id="penPreset">
+            <option value="0.3">0.3mm</option>
+            <option value="0.4" selected>0.4mm</option>
+            <option value="0.5">0.5mm</option>
+            <option value="0.8">0.8mm</option>
+            <option value="1.0">1.0mm</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+
+        <label title="Brush size. Hotkeys: [ and ]">
+          Brush
+          <input id="brushSize" type="range" min="4" max="120" value="24" />
+          <span id="brushValue">24</span>
+        </label>
+      </div>
+
+      <div class="tool-group">
+        <button id="brushBtn" title="Brush tool. Hotkey: B">Brush</button>
+        <button id="eraserBtn" class="eraser" title="Eraser tool. Hotkey: E">Eraser</button>
+        <button id="clearBtn" title="Clear paint. Hotkey: C">Clear All</button>
+      </div>
+
+      <div class="tool-group">
+        <button id="generateBtn" class="generate" title="Generate SVG layers">Generate</button>
+        <button id="downloadBtn" disabled title="Download generated SVG">Download</button>
+      </div>
+
+      <div id="status" class="status">No SVG loaded</div>
+    </div>
+
+    <main class="workspace-wrap">
+      <div id="workspace" class="workspace">
+        <div id="svgStage" class="svg-stage"></div>
+        <canvas id="paintCanvas"></canvas>
+        <div id="emptyState" class="empty-state">
+          Load an SVG to begin painting.
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="brushCursor"></div>
+
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <strong id="loadingText">Parsing Geometry...</strong>
+    </div>
+  </div>
+
+  <div id="warningModal" class="modal-backdrop">
+    <div class="modal">
+      <h2>Unassigned shapes found</h2>
+      <p id="warningText"></p>
+      <div class="modal-actions">
+        <button id="cancelExportBtn">Cancel</button>
+        <button id="pushToActiveBtn">Move to active layer</button>
+        <button id="exportAnywayBtn" class="generate">Export anyway</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SHAPE_SELECTOR = [
+      "path",
+      "polygon",
+      "polyline",
+      "rect",
+      "circle",
+      "ellipse",
+      "line"
+    ].join(",");
+
+    const MAX_LAYERS = 5;
+
+    const DEFAULT_LAYER_COLORS = [
+      "#8b5cf6",
+      "#f97316",
+      "#111111",
+      "#22c55e",
+      "#ef4444"
+    ];
+
+    const PEN_TO_BRUSH_PX = {
+      "0.3": 14,
+      "0.4": 18,
+      "0.5": 24,
+      "0.8": 38,
+      "1.0": 48
+    };
+
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const workspace = document.getElementById("workspace");
+    const svgStage = document.getElementById("svgStage");
+    const paintCanvas = document.getElementById("paintCanvas");
+    const paintCtx = paintCanvas.getContext("2d", { willReadFrequently: true });
+    const brushCursor = document.getElementById("brushCursor");
+    const brushSize = document.getElementById("brushSize");
+    const brushValue = document.getElementById("brushValue");
+    const penPreset = document.getElementById("penPreset");
+    const brushBtn = document.getElementById("brushBtn");
+    const eraserBtn = document.getElementById("eraserBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const generateBtn = document.getElementById("generateBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const addLayerBtn = document.getElementById("addLayerBtn");
+    const layerList = document.getElementById("layerList");
+    const statusEl = document.getElementById("status");
+    const emptyState = document.getElementById("emptyState");
+    const loadingOverlay = document.getElementById("loadingOverlay");
+    const loadingText = document.getElementById("loadingText");
+    const warningModal = document.getElementById("warningModal");
+    const warningText = document.getElementById("warningText");
+    const cancelExportBtn = document.getElementById("cancelExportBtn");
+    const pushToActiveBtn = document.getElementById("pushToActiveBtn");
+    const exportAnywayBtn = document.getElementById("exportAnywayBtn");
+
+    let layers = [];
+    let activeLayerId = null;
+    let nextLayerNumber = 1;
+
+    let eraserMode = false;
+    let drawing = false;
+    let lastPoint = null;
+
+    let originalSvgText = "";
+    let originalDoc = null;
+    let liveSvg = null;
+
+    const maskCanvas = document.createElement("canvas");
+    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+
+    let generatedSvgText = "";
+    let pendingExport = null;
+
+    const stage = {
+      width: 0,
+      height: 0,
+      scale: 1
+    };
+
+    initializeLayers();
+    setBrushSize(PEN_TO_BRUSH_PX["0.4"]);
+
+    addLayerBtn.addEventListener("click", () => {
+      const color = DEFAULT_LAYER_COLORS[(nextLayerNumber - 1) % DEFAULT_LAYER_COLORS.length];
+      addLayer(color);
+      setStatus("Layer added");
+    });
+
+    penPreset.addEventListener("change", () => {
+      if (penPreset.value === "custom") return;
+      setBrushSize(PEN_TO_BRUSH_PX[penPreset.value]);
+    });
+
+    brushSize.addEventListener("input", () => {
+      penPreset.value = "custom";
+      updateBrushSizeUi();
+    });
+
+    brushBtn.addEventListener("click", () => {
+      setBrushMode();
+    });
+
+    eraserBtn.addEventListener("click", () => {
+      setEraserMode();
+    });
+
+    clearBtn.addEventListener("click", () => {
+      clearPaint();
+      generatedSvgText = "";
+      downloadBtn.disabled = true;
+      setStatus("Paint cleared");
+    });
+
+    generateBtn.addEventListener("click", () => {
+      if (!originalDoc || !liveSvg) {
+        setStatus("Load an SVG first");
+        return;
+      }
+
+      runPreflightAndMaybeExport();
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      if (!generatedSvgText) return;
+
+      const blob = new Blob([generatedSvgText], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+
+      a.href = url;
+      a.download = "painted-layers.svg";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 100);
+    });
+
+    cancelExportBtn.addEventListener("click", () => {
+      pendingExport = null;
+      hideWarningModal();
+      setStatus("Export canceled");
+    });
+
+    exportAnywayBtn.addEventListener("click", () => {
+      if (!pendingExport) return;
+      finalizeExport(pendingExport);
+      pendingExport = null;
+      hideWarningModal();
+    });
+
+    pushToActiveBtn.addEventListener("click", () => {
+      if (!pendingExport) return;
+
+      const activeLayer = getActiveLayer();
+      if (!activeLayer) return;
+
+      const unassigned = pendingExport.assignments.get("unassigned") || [];
+      const activeShapes = pendingExport.assignments.get(activeLayer.id) || [];
+
+      pendingExport.assignments.set(activeLayer.id, activeShapes.concat(unassigned));
+      pendingExport.assignments.set("unassigned", []);
+
+      finalizeExport(pendingExport);
+      pendingExport = null;
+      hideWarningModal();
+    });
+
+    dropZone.addEventListener("click", () => fileInput.click());
+
+    fileInput.addEventListener("change", event => {
+      const file = event.target.files[0];
+      if (file) loadSvgFile(file);
+    });
+
+    dropZone.addEventListener("dragover", event => {
+      event.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.classList.remove("dragover");
+    });
+
+    dropZone.addEventListener("drop", event => {
+      event.preventDefault();
+      dropZone.classList.remove("dragover");
+
+      const file = event.dataTransfer.files[0];
+      if (file) loadSvgFile(file);
+    });
+
+    window.addEventListener("resize", debounce(async () => {
+      if (!originalSvgText || paintCanvas.width <= 0) return;
+
+      const savedPaint = document.createElement("canvas");
+      savedPaint.width = paintCanvas.width;
+      savedPaint.height = paintCanvas.height;
+
+      const savedCtx = savedPaint.getContext("2d");
+      savedCtx.drawImage(paintCanvas, 0, 0);
+
+      await renderSvg(originalSvgText, { preservePaint: true });
+
+      paintCtx.save();
+      paintCtx.drawImage(savedPaint, 0, 0, paintCanvas.width, paintCanvas.height);
+      paintCtx.restore();
+
+      clipPaintToMask();
+    }, 120));
+
+    window.addEventListener("keydown", event => {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (["input", "select", "textarea"].includes(tag)) return;
+
+      if (event.key.toLowerCase() === "b") {
+        setBrushMode();
+      }
+
+      if (event.key.toLowerCase() === "e") {
+        setEraserMode();
+      }
+
+      if (event.key === "[") {
+        penPreset.value = "custom";
+        setBrushSize(Number(brushSize.value) - 4);
+      }
+
+      if (event.key === "]") {
+        penPreset.value = "custom";
+        setBrushSize(Number(brushSize.value) + 4);
+      }
+
+      if (event.key.toLowerCase() === "c") {
+        clearPaint();
+        generatedSvgText = "";
+        downloadBtn.disabled = true;
+        setStatus("Paint cleared");
+      }
+    });
+
+    paintCanvas.addEventListener("pointerdown", startDraw);
+
+    paintCanvas.addEventListener("pointermove", event => {
+      moveBrushCursor(event);
+      drawMove(event);
+    });
+
+    paintCanvas.addEventListener("pointerenter", event => {
+      brushCursor.style.display = originalDoc ? "block" : "none";
+      moveBrushCursor(event);
+    });
+
+    paintCanvas.addEventListener("pointerleave", () => {
+      brushCursor.style.display = "none";
+    });
+
+    window.addEventListener("pointerup", endDraw);
+    window.addEventListener("pointercancel", endDraw);
+
+    function initializeLayers() {
+      addLayer("#8b5cf6");
+      addLayer("#f97316");
+      addLayer("#111111");
+      setActiveLayer(layers[0].id);
+      updateBrushSizeUi();
+    }
+
+    function addLayer(hexColor) {
+      if (layers.length >= MAX_LAYERS) {
+        addLayerBtn.disabled = true;
+        setStatus(`Maximum ${MAX_LAYERS} layers`);
+        return;
+      }
+
+      const id = `layer-${makeId()}`;
+
+      const layer = {
+        id,
+        color: hexColor.toLowerCase(),
+        rgb: hexToRgb(hexColor),
+        alphaCss: makeAlphaColor(hexColor, 0.52)
+      };
+
+      layers.push(layer);
+      nextLayerNumber += 1;
+
+      renderLayerControls();
+      setActiveLayer(id);
+      syncLayerLimitUi();
+    }
+
+    function removeLayer(id) {
+      if (layers.length <= 1) {
+        setStatus("Keep at least one layer");
+        return;
+      }
+
+      layers = layers.filter(layer => layer.id !== id);
+
+      if (activeLayerId === id) {
+        setActiveLayer(layers[0].id);
+      }
+
+      renderLayerControls();
+      generatedSvgText = "";
+      downloadBtn.disabled = true;
+      syncLayerLimitUi();
+    }
+
+    function setActiveLayer(id) {
+      activeLayerId = id;
+      setBrushMode();
+      renderLayerControls();
+      syncActiveColor();
+    }
+
+    function setBrushMode() {
+      eraserMode = false;
+      brushBtn.classList.add("active");
+      eraserBtn.classList.remove("active");
+      brushCursor.classList.remove("eraser");
+      syncActiveColor();
+    }
+
+    function setEraserMode() {
+      eraserMode = true;
+      brushBtn.classList.remove("active");
+      eraserBtn.classList.add("active");
+      brushCursor.classList.add("eraser");
+    }
+
+    function renderLayerControls() {
+      layerList.innerHTML = "";
+
+      layers.forEach(layer => {
+        const chip = document.createElement("div");
+        chip.className = "layer-chip";
+        if (layer.id === activeLayerId) chip.classList.add("active");
+
+        const selectBtn = document.createElement("button");
+        selectBtn.className = "layer-select";
+        selectBtn.textContent = layer.color;
+        selectBtn.style.background = layer.color;
+        selectBtn.style.borderColor = layer.color;
+        selectBtn.title = `Paint ${layer.color}`;
+        selectBtn.addEventListener("click", () => setActiveLayer(layer.id));
+
+        const colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.value = layer.color;
+        colorInput.title = "Change layer color";
+
+        colorInput.addEventListener("input", () => {
+          layer.color = colorInput.value.toLowerCase();
+          layer.rgb = hexToRgb(layer.color);
+          layer.alphaCss = makeAlphaColor(layer.color, 0.52);
+
+          selectBtn.textContent = layer.color;
+          selectBtn.style.background = layer.color;
+          selectBtn.style.borderColor = layer.color;
+
+          if (layer.id === activeLayerId) syncActiveColor();
+
+          generatedSvgText = "";
+          downloadBtn.disabled = true;
+        });
+
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "remove-layer";
+        removeBtn.textContent = "×";
+        removeBtn.title = "Remove layer";
+        removeBtn.addEventListener("click", () => removeLayer(layer.id));
+
+        chip.appendChild(selectBtn);
+        chip.appendChild(colorInput);
+        chip.appendChild(removeBtn);
+
+        layerList.appendChild(chip);
+      });
+    }
+
+    async function loadSvgFile(file) {
+      if (!file.name.toLowerCase().endsWith(".svg") && file.type !== "image/svg+xml") {
+        setStatus("Please load an SVG file");
+        return;
+      }
+
+      showLoading("Parsing Geometry...");
+      await nextFrame();
+
+      try {
+        originalSvgText = await file.text();
+
+        const parser = new DOMParser();
+        originalDoc = parser.parseFromString(originalSvgText, "image/svg+xml");
+
+        const parserError = originalDoc.querySelector("parsererror");
+        if (parserError) {
+          setStatus("SVG parse error");
+          return;
+        }
+
+        generatedSvgText = "";
+        downloadBtn.disabled = true;
+
+        showLoading("Building Paint Mask...");
+        await nextFrame();
+
+        await renderSvg(originalSvgText);
+        setStatus(`Loaded ${file.name}`);
+      } finally {
+        hideLoading();
+      }
+    }
+
+    async function renderSvg(svgText, options = {}) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, "image/svg+xml");
+      const svg = doc.documentElement;
+
+      ensureViewBox(svg);
+
+      svgStage.innerHTML = "";
+      const importedSvg = document.importNode(svg, true);
+      svgStage.appendChild(importedSvg);
+      liveSvg = importedSvg;
+
+      fitSvgToWorkspace(importedSvg);
+
+      paintCanvas.width = Math.round(stage.width);
+      paintCanvas.height = Math.round(stage.height);
+      paintCanvas.style.width = `${stage.width}px`;
+      paintCanvas.style.height = `${stage.height}px`;
+      paintCanvas.style.transform = "translate(-50%, -50%)";
+
+      maskCanvas.width = paintCanvas.width;
+      maskCanvas.height = paintCanvas.height;
+
+      if (!options.preservePaint) {
+        clearPaint();
+      }
+
+      emptyState.style.display = "none";
+      updateBrushSizeUi();
+      await buildMaskFromSvg();
+    }
+
+    function ensureViewBox(svg) {
+      if (svg.getAttribute("viewBox")) return;
+
+      const width = parseSvgLength(svg.getAttribute("width")) || 1000;
+      const height = parseSvgLength(svg.getAttribute("height")) || 1000;
+
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    }
+
+    function parseSvgLength(value) {
+      if (!value) return null;
+      const match = String(value).match(/[-+]?\d*\.?\d+/);
+      return match ? Number(match[0]) : null;
+    }
+
+    function fitSvgToWorkspace(svg) {
+      const box = workspace.getBoundingClientRect();
+      const viewBox = svg.viewBox.baseVal;
+
+      const maxW = Math.max(100, box.width - 32);
+      const maxH = Math.max(100, box.height - 32);
+      const scale = Math.min(maxW / viewBox.width, maxH / viewBox.height);
+
+      stage.width = viewBox.width * scale;
+      stage.height = viewBox.height * scale;
+      stage.scale = scale;
+
+      svgStage.style.width = `${stage.width}px`;
+      svgStage.style.height = `${stage.height}px`;
+      svgStage.style.transform = "translate(-50%, -50%)";
+
+      svg.setAttribute("width", stage.width);
+      svg.setAttribute("height", stage.height);
+      svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    }
+
+    function clearPaint() {
+      paintCtx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+    }
+
+    function buildMaskFromSvg() {
+      return new Promise(resolve => {
+        maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+
+        const silhouetteText = createSilhouetteSvgText(originalSvgText);
+        const blob = new Blob([silhouetteText], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+
+        img.onload = () => {
+          maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+          maskCtx.drawImage(img, 0, 0, maskCanvas.width, maskCanvas.height);
+
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+          }, 100);
+
+          clipPaintToMask();
+          resolve();
+        };
+
+        img.onerror = () => {
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+          }, 100);
+
+          setStatus("Mask creation failed");
+          resolve();
+        };
+
+        img.src = url;
+      });
+    }
+
+    function createSilhouetteSvgText(svgText) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, "image/svg+xml");
+      const svg = doc.documentElement;
+
+      ensureViewBox(svg);
+
+      svg.setAttribute("width", stage.width);
+      svg.setAttribute("height", stage.height);
+      svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+      svg.querySelectorAll("image, foreignObject, script").forEach(el => el.remove());
+
+      svg.querySelectorAll(SHAPE_SELECTOR).forEach(shape => {
+        shape.removeAttribute("class");
+        shape.removeAttribute("style");
+
+        shape.setAttribute("fill", "black");
+        shape.setAttribute("fill-opacity", "1");
+        shape.setAttribute("stroke", "black");
+        shape.setAttribute("stroke-opacity", "1");
+
+        const tag = shape.tagName.toLowerCase();
+
+        if (tag === "line" || tag === "polyline") {
+          shape.setAttribute("stroke-width", shape.getAttribute("stroke-width") || "2");
+          shape.setAttribute("stroke-linecap", "round");
+          shape.setAttribute("stroke-linejoin", "round");
+        }
+      });
+
+      return new XMLSerializer().serializeToString(svg);
+    }
+
+    function getCanvasPoint(event) {
+      const rect = paintCanvas.getBoundingClientRect();
+
+      return {
+        x: (event.clientX - rect.left) * (paintCanvas.width / rect.width),
+        y: (event.clientY - rect.top) * (paintCanvas.height / rect.height)
+      };
+    }
+
+    function startDraw(event) {
+      if (!originalDoc) return;
+
+      drawing = true;
+      lastPoint = getCanvasPoint(event);
+      paintCanvas.setPointerCapture(event.pointerId);
+      drawDot(lastPoint);
+    }
+
+    function drawMove(event) {
+      if (!drawing || !lastPoint) return;
+
+      const point = getCanvasPoint(event);
+      drawStroke(lastPoint, point);
+      lastPoint = point;
+    }
+
+    function endDraw() {
+      drawing = false;
+      lastPoint = null;
+    }
+
+    function drawDot(point) {
+      const size = Number(brushSize.value);
+      const layer = getActiveLayer();
+
+      if (!layer) return;
+
+      paintCtx.save();
+      paintCtx.globalCompositeOperation = eraserMode ? "destination-out" : "source-over";
+      paintCtx.fillStyle = eraserMode ? "rgba(0,0,0,1)" : layer.alphaCss;
+      paintCtx.beginPath();
+      paintCtx.arc(point.x, point.y, size / 2, 0, Math.PI * 2);
+      paintCtx.fill();
+      paintCtx.restore();
+
+      clipPaintToMask();
+      generatedSvgText = "";
+      downloadBtn.disabled = true;
+    }
+
+    function drawStroke(from, to) {
+      const size = Number(brushSize.value);
+      const layer = getActiveLayer();
+
+      if (!layer) return;
+
+      paintCtx.save();
+      paintCtx.globalCompositeOperation = eraserMode ? "destination-out" : "source-over";
+      paintCtx.strokeStyle = eraserMode ? "rgba(0,0,0,1)" : layer.alphaCss;
+      paintCtx.lineWidth = size;
+      paintCtx.lineCap = "round";
+      paintCtx.lineJoin = "round";
+
+      paintCtx.beginPath();
+      paintCtx.moveTo(from.x, from.y);
+      paintCtx.lineTo(to.x, to.y);
+      paintCtx.stroke();
+      paintCtx.restore();
+
+      clipPaintToMask();
+      generatedSvgText = "";
+      downloadBtn.disabled = true;
+    }
+
+    function clipPaintToMask() {
+      if (!maskCanvas.width || !maskCanvas.height) return;
+
+      paintCtx.save();
+      paintCtx.globalCompositeOperation = "destination-in";
+      paintCtx.drawImage(maskCanvas, 0, 0);
+      paintCtx.restore();
+    }
+
+    function runPreflightAndMaybeExport() {
+      showLoading("Classifying Shapes...");
+
+      requestAnimationFrame(() => {
+        const exportData = buildExportData();
+        const unassignedCount = exportData.assignments.get("unassigned")?.length || 0;
+
+        hideLoading();
+
+        if (unassignedCount > 0) {
+          pendingExport = exportData;
+          showWarningModal(unassignedCount);
+          return;
+        }
+
+        finalizeExport(exportData);
+      });
+    }
+
+    function buildExportData() {
+      const parser = new DOMParser();
+      const outDoc = parser.parseFromString(originalSvgText, "image/svg+xml");
+      const outSvg = outDoc.documentElement;
+
+      ensureViewBox(outSvg);
+
+      outSvg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      outSvg.setAttribute("xmlns:inkscape", "http://www.inkscape.org/namespaces/inkscape");
+      outSvg.setAttribute("xmlns:sodipodi", "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd");
+
+      const originalShapes = Array.from(outSvg.querySelectorAll(SHAPE_SELECTOR));
+      const liveShapes = Array.from(liveSvg.querySelectorAll(SHAPE_SELECTOR));
+
+      const assignments = new Map();
+
+      layers.forEach(layer => {
+        assignments.set(layer.id, []);
+      });
+
+      assignments.set("unassigned", []);
+
+      originalShapes.forEach((shape, index) => {
+        const liveShape = liveShapes[index];
+        const layerId = detectPaintedLayerForShape(liveShape);
+        const target = assignments.has(layerId) ? layerId : "unassigned";
+
+        assignments.get(target).push(shape.cloneNode(true));
+      });
+
+      return { outDoc, outSvg, assignments };
+    }
+
+    function finalizeExport(exportData) {
+      clearSvgBodyButKeepDefs(exportData.outSvg);
+
+      layers.forEach(layer => {
+        appendLayer(exportData.outDoc, exportData.outSvg, layer, exportData.assignments.get(layer.id));
+      });
+
+      appendUnassignedLayer(exportData.outDoc, exportData.outSvg, exportData.assignments.get("unassigned"));
+
+      generatedSvgText = formatSvg(new XMLSerializer().serializeToString(exportData.outSvg));
+      downloadBtn.disabled = false;
+      setStatus("Generated Inkscape layers");
+    }
+
+    function clearSvgBodyButKeepDefs(svg) {
+      const keepTags = new Set(["defs", "metadata", "style", "title", "desc"]);
+
+      Array.from(svg.children).forEach(child => {
+        const tag = child.tagName.toLowerCase();
+
+        if (!keepTags.has(tag)) {
+          child.remove();
+        }
+      });
+    }
+
+    function appendLayer(doc, svg, layer, shapes) {
+      const g = doc.createElementNS("http://www.w3.org/2000/svg", "g");
+
+      g.setAttribute("inkscape:groupmode", "layer");
+      g.setAttribute("inkscape:label", layer.color);
+      g.setAttribute("id", safeLayerId(layer.color));
+      g.setAttribute("style", "display:inline");
+
+      shapes.forEach(shape => {
+        const cloned = shape.cloneNode(true);
+
+        forceLineArtColor(cloned, layer.color);
+
+        cloned.querySelectorAll("*").forEach(child => {
+          forceLineArtColor(child, layer.color);
+        });
+
+        g.appendChild(cloned);
+      });
+
+      svg.appendChild(g);
+    }
+
+    function appendUnassignedLayer(doc, svg, shapes) {
+      const g = doc.createElementNS("http://www.w3.org/2000/svg", "g");
+
+      g.setAttribute("inkscape:groupmode", "layer");
+      g.setAttribute("inkscape:label", "Unassigned");
+      g.setAttribute("id", "layer-unassigned");
+      g.setAttribute("style", "display:inline;opacity:0.3");
+
+      shapes.forEach(shape => {
+        const cloned = shape.cloneNode(true);
+
+        forceLineArtColor(cloned, "#111111");
+
+        cloned.querySelectorAll("*").forEach(child => {
+          forceLineArtColor(child, "#111111");
+        });
+
+        g.appendChild(cloned);
+      });
+
+      svg.appendChild(g);
+    }
+
+    function forceLineArtColor(el, color) {
+      const tag = el.tagName.toLowerCase();
+
+      if (!["path", "polygon", "polyline", "rect", "circle", "ellipse", "line"].includes(tag)) {
+        return;
+      }
+
+      el.removeAttribute("class");
+
+      el.setAttribute("fill", "none");
+      el.setAttribute("fill-opacity", "1");
+      el.setAttribute("stroke", color);
+      el.setAttribute("stroke-opacity", "1");
+
+      if (!el.getAttribute("stroke-width")) {
+        el.setAttribute("stroke-width", "1");
+      }
+
+      el.setAttribute("stroke-linecap", "round");
+      el.setAttribute("stroke-linejoin", "round");
+
+      const oldStyle = el.getAttribute("style") || "";
+
+      const cleanedStyle = oldStyle
+        .split(";")
+        .filter(rule => {
+          const prop = rule.split(":")[0]?.trim().toLowerCase();
+
+          return prop && ![
+            "fill",
+            "fill-opacity",
+            "stroke",
+            "stroke-opacity",
+            "stroke-width",
+            "stroke-linecap",
+            "stroke-linejoin"
+          ].includes(prop);
+        })
+        .join(";");
+
+      if (cleanedStyle.trim()) {
+        el.setAttribute("style", cleanedStyle);
+      } else {
+        el.removeAttribute("style");
+      }
+    }
+
+    function detectPaintedLayerForShape(shape) {
+      if (!shape || typeof shape.getBBox !== "function") return "unassigned";
+
+      let bbox;
+
+      try {
+        bbox = shape.getBBox();
+      } catch {
+        return "unassigned";
+      }
+
+      if (!bbox || bbox.width === 0 || bbox.height === 0) {
+        return "unassigned";
+      }
+
+      const samples = [
+        [0.50, 0.50],
+        [0.20, 0.20],
+        [0.80, 0.20],
+        [0.20, 0.80],
+        [0.80, 0.80],
+        [0.50, 0.20],
+        [0.50, 0.80],
+        [0.20, 0.50],
+        [0.80, 0.50],
+        [0.35, 0.35],
+        [0.65, 0.35],
+        [0.35, 0.65],
+        [0.65, 0.65]
+      ];
+
+      const counts = new Map();
+
+      layers.forEach(layer => {
+        counts.set(layer.id, 0);
+      });
+
+      for (const [px, py] of samples) {
+        const svgPoint = liveSvg.createSVGPoint();
+
+        svgPoint.x = bbox.x + bbox.width * px;
+        svgPoint.y = bbox.y + bbox.height * py;
+
+        let insideShape = true;
+
+        if (typeof shape.isPointInFill === "function" && typeof shape.isPointInStroke === "function") {
+          insideShape = shape.isPointInFill(svgPoint) || shape.isPointInStroke(svgPoint);
+        }
+
+        if (!insideShape) continue;
+
+        const screenPoint = svgPoint.matrixTransform(shape.getScreenCTM());
+        const canvasPoint = screenToCanvasPoint(screenPoint.x, screenPoint.y);
+
+        if (!pointInsideCanvas(canvasPoint)) continue;
+
+        let pixel;
+
+        try {
+          pixel = paintCtx.getImageData(
+            Math.round(canvasPoint.x),
+            Math.round(canvasPoint.y),
+            1,
+            1
+          ).data;
+        } catch (error) {
+          setStatus("Canvas read failed. SVG may contain external images.");
+          return "unassigned";
+        }
+
+        if (pixel[3] < 8) continue;
+
+        const nearest = nearestLayer(pixel[0], pixel[1], pixel[2]);
+        if (nearest) {
+          counts.set(nearest.id, counts.get(nearest.id) + 1);
+        }
+      }
+
+      let bestLayerId = "unassigned";
+      let bestCount = 0;
+
+      counts.forEach((count, layerId) => {
+        if (count > bestCount) {
+          bestLayerId = layerId;
+          bestCount = count;
+        }
+      });
+
+      return bestCount > 0 ? bestLayerId : "unassigned";
+    }
+
+    function nearestLayer(r, g, b) {
+      let best = null;
+      let bestDistance = Infinity;
+
+      layers.forEach(layer => {
+        const dr = r - layer.rgb.r;
+        const dg = g - layer.rgb.g;
+        const db = b - layer.rgb.b;
+        const distance = dr * dr + dg * dg + db * db;
+
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = layer;
+        }
+      });
+
+      return best;
+    }
+
+    function screenToCanvasPoint(clientX, clientY) {
+      const rect = paintCanvas.getBoundingClientRect();
+
+      return {
+        x: (clientX - rect.left) * (paintCanvas.width / rect.width),
+        y: (clientY - rect.top) * (paintCanvas.height / rect.height)
+      };
+    }
+
+    function pointInsideCanvas(point) {
+      return (
+        point.x >= 0 &&
+        point.y >= 0 &&
+        point.x < paintCanvas.width &&
+        point.y < paintCanvas.height
+      );
+    }
+
+    function getActiveLayer() {
+      return layers.find(layer => layer.id === activeLayerId) || null;
+    }
+
+    function moveBrushCursor(event) {
+      brushCursor.style.left = `${event.clientX}px`;
+      brushCursor.style.top = `${event.clientY}px`;
+    }
+
+    function setBrushSize(value) {
+      const min = Number(brushSize.min);
+      const max = Number(brushSize.max);
+      const clamped = Math.max(min, Math.min(max, value));
+
+      brushSize.value = String(clamped);
+      updateBrushSizeUi();
+    }
+
+    function updateBrushSizeUi() {
+      const size = Number(brushSize.value);
+
+      brushValue.textContent = String(size);
+      brushCursor.style.width = `${size}px`;
+      brushCursor.style.height = `${size}px`;
+    }
+
+    function syncActiveColor() {
+      const layer = getActiveLayer();
+      if (!layer) return;
+
+      document.documentElement.style.setProperty("--active-color", layer.color);
+    }
+
+    function syncLayerLimitUi() {
+      addLayerBtn.disabled = layers.length >= MAX_LAYERS;
+      addLayerBtn.title = layers.length >= MAX_LAYERS
+        ? `Maximum ${MAX_LAYERS} plotter layers`
+        : "Add layer";
+    }
+
+    function hexToRgb(hex) {
+      const clean = hex.replace("#", "");
+      const value = parseInt(clean, 16);
+
+      return {
+        r: (value >> 16) & 255,
+        g: (value >> 8) & 255,
+        b: value & 255
+      };
+    }
+
+    function makeAlphaColor(hex, alpha) {
+      const rgb = hexToRgb(hex);
+      return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+    }
+
+    function safeLayerId(color) {
+      return `layer-${color.replace("#", "").toLowerCase()}`;
+    }
+
+    function makeId() {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID();
+      }
+
+      return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function formatSvg(svgText) {
+      return svgText
+        .replace(/></g, ">\n<")
+        .replace(/<g/g, "\n<g")
+        .trim();
+    }
+
+    function showLoading(message) {
+      loadingText.textContent = message;
+      loadingOverlay.style.display = "grid";
+    }
+
+    function hideLoading() {
+      loadingOverlay.style.display = "none";
+    }
+
+    function showWarningModal(count) {
+      warningText.textContent = `You have ${count} unassigned shapes. Export anyway, cancel, or move them into the active color layer.`;
+      warningModal.style.display = "grid";
+    }
+
+    function hideWarningModal() {
+      warningModal.style.display = "none";
+    }
+
+    function nextFrame() {
+      return new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
+    function debounce(fn, delay) {
+      let timer = null;
+
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+      };
+    }
+
+    function setStatus(message) {
+      statusEl.textContent = message;
+    }
+  </script>
+</body>
+</html>
