@@ -1,4 +1,4 @@
-I built a browser-based SVG layer painter for pen plotter prep. The whole point is to take one SVG and quickly sort the artwork into separate color layers before opening it in Inkscape.
+AI built a browser-based SVG layer painter for pen plotter prep. The whole point is to take one SVG and quickly sort the artwork into separate color layers before opening it in Inkscape.
 
 The app lets me drag and drop an SVG file into the page. Once it loads, the SVG shows up in the workspace, and I paint over the parts I want assigned to a specific pen color. The painting does not become the final artwork. It only acts as a selection system. When I paint over part of the SVG, the app uses the paint color to decide which Inkscape layer each SVG shape belongs to.
 
